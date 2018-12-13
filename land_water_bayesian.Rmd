@@ -1,0 +1,112 @@
+---
+title: "Bayesian data analysis in R"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(ggthemes)
+```
+
+as seen in the bayesian stats course by [Richard Mcelreath](https://xcelab.net/rm/)
+
+## Simulating fake data
+
+We want to simulate pin drops on the surface of the earth, check if they fall on land or sea and thus estimate the fraction of the earth's surface covered by water. 
+
+```{r}
+fraction_land <- 0.24 # the answer, we use this to create the data set.
+num_drops <- 1000
+count <- seq(1,num_drops,1)
+
+generate_data <- function(n, theta){
+    return(runif(n, min = 0, max = 1) <= theta)
+}
+
+probability_model <- function(sample, theta){
+    return(sample*theta + (1-sample)*(1-theta))
+}
+
+water_land <- generate_data(num_drops, fraction_land)
+data <- data_frame(count, water_land)
+data %>% head()
+```
+
+## Expressing the problem in bayesian terms
+
+The parameter we want to estimate is the probablity that a pin lands on land, $\theta \in [0,1]$. Since we know nothing about $\theta$, let us take a uniform prior.
+
+```{r}
+range_theta <- seq(0,1,0.01)
+prior_theta <- function(theta){
+    return(1)
+}
+plot_prior <- function(range, prior){
+    df <- data_frame(value_theta = range) %>% 
+        rowwise() %>% 
+        mutate(prob_density = prior(value_theta))
+    p <- ggplot(df) +
+        geom_point(aes(x = value_theta, y = prob_density)) +
+        ggtitle("Prior probability density") +
+        theme_tufte() +
+        ylim(0,3) +
+        xlim(0,1.1)
+    p %>% ggsave(filename = "prior.png", device = "png", height = 6, width = 3.5, dpi = 600)
+    return(p)
+}
+
+plot_prior(range_theta, prior_theta)
+```
+
+## Calculating the posterior
+
+Bayes theorem :
+
+$$P(\theta|D) = \frac{P(D|\theta)P(\theta)}{P(D)}.$$
+The **prior** $P(\theta)$ we already have. Let us now compute the likelihood $P(D|\theta)$ from our data, step by step.
+
+If we just take the first pin we dropped, 
+
+```{r}
+likelyhood_theta <- function(data, value_theta, model){
+   len_data <- nrow(data)
+   temp <- 0
+   for(j in 1:len_data){
+       temp<- temp+log(model(data$water_land[j], value_theta))
+   }
+   llhood <- exp(temp)
+   return(llhood)
+}
+
+likelyhood_theta(data[1,], 0.9, probability_model)
+```
+
+The probability of the data has an integral over the parameter $\theta$ so we do not need to worry about it when choosing the optimum value of theta. It is just a normalization factor.
+
+```{r}
+plot_posterior <- function(data, likelihood, prior, normalization, range, model){
+    delta <- range[2]-range[1]
+    df <- data_frame(value_theta = range) %>% 
+        rowwise() %>% 
+        mutate(prob_density = 
+                   prior(value_theta)*
+                   likelihood(data, value_theta, model))
+    norm <- sum(df$prob_density*delta)
+    df <- df %>% 
+        mutate(prob_density = prob_density/norm)
+    p <- ggplot(df) +
+        geom_point(aes(x = value_theta, y = prob_density)) +
+        ggtitle("posterior probability density") +
+        theme_tufte() +
+        xlim(0,1.1)
+    p %>% ggsave(filename = paste("posterior_",nrow(data),".png",sep = ""), device = "png", height = 6, width = 3.5, dpi = 600)
+    return(p)
+}
+
+# for(i in 1:10){
+#     plot_posterior(data[1:i,], likelyhood_theta, prior_theta, probability_data, range_theta, probability_model)
+# }
+plot_posterior(data[1:1000,], likelyhood_theta, prior_theta, probability_data, range_theta, probability_model)
+```
+
